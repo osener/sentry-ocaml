@@ -1,7 +1,12 @@
 open Core
 
+module Uri_sexp = struct
+  include Uri_sexp
+  let compare = Uri.compare
+end
+
 type t' =
-  { uri : Uri.t
+  { uri : Uri_sexp.t
   ; public_key : string
   ; private_key : string option
   ; project_id : int }
