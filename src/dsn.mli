@@ -1,5 +1,3 @@
-open Core
-
 type t' = private
   { uri : Uri.t
   ; public_key : string
@@ -40,12 +38,6 @@ val of_string : string -> t
 
 (** [of_uri dsn] is like [of_string dsn] but takes a [Uri.t] *)
 val of_uri : Uri.t -> t
-
-(** [arg] is a Command.Spec argument type which calls [of_string] *)
-val arg : t Command.Arg_type.t
-
-(** Like [arg] but uses [of_string_exn] *)
-val arg_exn : t Command.Arg_type.t
 
 (** [event_store_uri] is the URI we should POST Sentry events to *)
 val event_store_uri : t' -> Uri.t

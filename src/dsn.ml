@@ -1,4 +1,4 @@
-open Core
+open Core_kernel
 
 type uri = Uri.t
 
@@ -70,14 +70,8 @@ let of_string dsn =
     None
 
 let default =
-  Sys.getenv "SENTRY_DSN"
+  Sys.getenv_opt "SENTRY_DSN"
   |> Option.bind ~f:of_string
-
-let arg =
-  Command.Spec.Arg_type.create of_string
-
-let arg_exn =
-  Command.Spec.Arg_type.create of_string_exn
 
 let event_store_uri { uri ; project_id ; _ } =
   sprintf "/api/%d/store/" project_id

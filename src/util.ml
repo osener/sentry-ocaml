@@ -1,5 +1,4 @@
 open Core_kernel
-open Async
 
 let cap_string_length ?(max_len=512) str =
   if String.length str > max_len then

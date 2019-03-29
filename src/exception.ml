@@ -1,5 +1,4 @@
 open Core_kernel
-open Async
 
 open Util
 
@@ -130,7 +129,7 @@ let of_exn exn =
   in
   (* Extract the inner exception for messages and stack trace when dealing
      with async *)
-  let base_exn = Monitor.extract_exn exn in
+  let base_exn = exn in
   let type_ =
     (* exn_slot_name prints something like Module__filename.Submodule.Exn_name,
        but we only want Exn_name *)
@@ -216,107 +215,3 @@ let of_exn exn =
         stacktrace @ monitor_trace, value
   in
   make ~type_ ?value ~stacktrace ()
-
-let of_error err =
-  let open Error.Internal_repr in
-  let rec find_backtrace = function
-    | With_backtrace (_, bt) -> Some bt
-    | Tag_t (_, t)
-    | Tag_arg (_, _, t) -> find_backtrace t
-    | Of_list (_, l) ->
-      List.find_map l ~f:find_backtrace
-    | _ -> None
-  in
-  match of_info err with
-  | Exn exn -> of_exn exn
-  | info ->
-    let _backtrace = find_backtrace info in
-    (* TODO: Parse backtrace *)
-    let type_ = "Error" in
-    let value = Error.to_string_hum err in
-    make ~type_ ~value ()
-
-let exn_test_helper e =
-  begin try
-    raise e
-  with e ->
-    let e = of_exn e in
-    { e with
-      stacktrace = List.map e.stacktrace ~f:(fun frame ->
-        { frame with
-          Frame.lineno = Some 192
-        ; colno = Some 4 }) }
-    |> to_payload
-    |> Payloads_j.string_of_exception_value
-    |> print_endline
-  end
-
-exception Exception_containing_function of (unit -> unit)
-
-let%expect_test "don't throw compare error on exn containing function" =
-  exn_test_helper (Exception_containing_function Fn.id);
-  [%expect {| {"type":"Exception_containing_function","value":"_","stacktrace":{"frames":[{"filename":"src/exception.ml","lineno":192,"colno":4}]}} |}]
-
-let%expect_test "parse exn to payload" =
-  exn_test_helper (Failure "This is a test");
-  [%expect {| {"type":"Failure","value":"This is a test","stacktrace":{"frames":[{"filename":"src/exception.ml","lineno":192,"colno":4}]}} |}]
-
-let%expect_test "parse Not_found to payload" =
-  exn_test_helper Caml.Not_found;
-  [%expect {| {"type":"Not_found","stacktrace":{"frames":[{"filename":"src/exception.ml","lineno":192,"colno":4}]}} |}]
-
-exception Custom_sexp_exception of string * int list [@@deriving sexp_of]
-
-let%expect_test "parse complex sexp exn to payload" =
-  exn_test_helper (Custom_sexp_exception ("This is a test", [ 4 ; 2 ]));
-  [%expect {| {"type":"Custom_sexp_exception","value":"(\"This is a test\" (4 2))","stacktrace":{"frames":[{"filename":"src/exception.ml","lineno":192,"colno":4}]}} |}]
-
-exception Custom_no_sexp_exception of string * int list
-
-let%expect_test "parse complex no-sexp exn to payload" =
-  exn_test_helper (Custom_no_sexp_exception ("This is a test", [ 4 ; 2 ]));
-  [%expect {| {"type":"Custom_no_sexp_exception","value":"(\"This is a test\" _)","stacktrace":{"frames":[{"filename":"src/exception.ml","lineno":192,"colno":4}]}} |}]
-
-exception Custom_no_sexp_single_arg_exception of string
-
-let%expect_test "parse single arg no-sexp exn to payload" =
-  exn_test_helper (Custom_no_sexp_single_arg_exception ("This is a test"));
-  [%expect {| {"type":"Custom_no_sexp_single_arg_exception","value":"This is a test","stacktrace":{"frames":[{"filename":"src/exception.ml","lineno":192,"colno":4}]}} |}]
-
-exception Custom_no_sexp_no_arg_exception
-
-let%expect_test "parse no arg no-sexp exn to payload" =
-  exn_test_helper Custom_no_sexp_no_arg_exception;
-  [%expect {| {"type":"Custom_no_sexp_no_arg_exception","stacktrace":{"frames":[{"filename":"src/exception.ml","lineno":192,"colno":4}]}} |}]
-
-let%expect_test "parse Error.t to payload" =
-  Error.of_string "This is different test"
-  |> of_error
-  |> to_payload
-  |> Payloads_j.string_of_exception_value
-  |> print_endline;
-  [%expect {|  {"type":"Error","value":"This is different test"} |}]
-
-let%expect_test "parse Async Monitor exception" =
-  Backtrace.elide := false;
-  Monitor.try_with ~extract_exn:false (fun () ->
-    raise Caml.Not_found)
-  >>= fun res ->
-  begin match res with
-  | Ok () -> assert false
-  | Error exn ->
-    exn_test_helper exn
-  end;
-  [%expect {| {"type":"Not_found","stacktrace":{"frames":[{"filename":"src/exception.ml","lineno":192,"colno":4},{"filename":"src/exception.ml","lineno":192,"colno":4},{"filename":"src/monitor.ml","lineno":192,"colno":4},{"filename":"src/job_queue.ml","lineno":192,"colno":4}]}} |}]
-
-let%expect_test "parse Async Monitor exception parse failure" =
-  Backtrace.elide := true;
-  Monitor.try_with ~extract_exn:false (fun () ->
-    raise Caml.Not_found)
-  >>= fun res ->
-  begin match res with
-  | Ok () -> assert false
-  | Error exn ->
-    exn_test_helper exn
-  end;
-  [%expect {| {"type":"Not_found","value":"(monitor.ml.Error Not_found (\"<backtrace elided in test>\"))","stacktrace":{"frames":[{"filename":"src/exception.ml","lineno":192,"colno":4}]}} |}]
